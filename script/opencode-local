@@ -1,0 +1,353 @@
+#!/usr/bin/env bash
+# opencode-local — prepara Ollama + modelo local y (opcionalmente) abre OpenCode.
+set -euo pipefail
+
+MODEL="${MODEL:-qwen2.5-coder:1.5b}"
+OLLAMA_HOST="${OLLAMA_HOST:-127.0.0.1:11434}"
+export OLLAMA_HOST
+
+# Límites conservadores para RAM ajustada.
+export OLLAMA_MAX_LOADED_MODELS="${OLLAMA_MAX_LOADED_MODELS:-1}"
+export OLLAMA_NUM_PARALLEL="${OLLAMA_NUM_PARALLEL:-1}"
+
+# Host usable para conectarse (0.0.0.0 no siempre sirve como URL).
+CONNECT_HOST="$OLLAMA_HOST"
+case "$CONNECT_HOST" in
+  0.0.0.0:*) CONNECT_HOST="127.0.0.1:${CONNECT_HOST#0.0.0.0:}" ;;
+  *:*) ;;
+  *) CONNECT_HOST="127.0.0.1:${CONNECT_HOST}" ;;
+esac
+OLLAMA_BASE="http://${CONNECT_HOST}"
+KEEP_ALIVE="${OPENCODE_LOCAL_KEEP_ALIVE:-10m}"
+CONTEXT="${OPENCODE_LOCAL_CONTEXT:-16384}"
+LAUNCH=1
+PULL=1
+
+usage() {
+  cat <<EOF
+Uso: opencode-local [opciones] [directorio]
+
+Prepara Ollama, el modelo local y la configuración; luego abre OpenCode.
+
+Opciones:
+  --no-launch   Solo prepara el entorno, no abre OpenCode.
+  --no-pull     No descarga el modelo si falta (falla en su lugar).
+  -h, --help    Muestra esta ayuda.
+
+Variables:
+  MODEL                     Modelo de Ollama (por defecto: $MODEL)
+  OLLAMA_HOST               Host de Ollama (por defecto: $OLLAMA_HOST)
+  OPENCODE_LOCAL_KEEP_ALIVE Tiempo que el modelo queda cargado (por defecto: $KEEP_ALIVE)
+  OPENCODE_LOCAL_CONTEXT    Contexto a forzar; 0 usa el modelo tal cual (por defecto: $CONTEXT)
+
+Ejemplos:
+  opencode-local
+  MODEL=qwen2.5-coder:7b opencode-local
+  opencode-local --no-launch
+EOF
+}
+
+args=()
+for arg in "$@"; do
+  case "$arg" in
+    --no-launch) LAUNCH=0 ;;
+    --no-pull) PULL=0 ;;
+    -h|--help) usage; exit 0 ;;
+    *) args+=("$arg") ;;
+  esac
+done
+
+say()  { printf '%s\n' "$*"; }
+info() { printf '  %s\n' "$*"; }
+ok()   { printf '✓ %s\n' "$*"; }
+warn() { printf '⚠ %s\n' "$*" >&2; }
+die()  { printf '✗ %s\n' "$*" >&2; exit 1; }
+
+say "==> Preparando OpenCode con modelo local: $MODEL"
+say ""
+
+# 1) Ollama ---------------------------------------------------------------
+command -v ollama >/dev/null 2>&1 || die "No encontré 'ollama' en PATH."
+
+if curl -fsS -m 2 "$OLLAMA_BASE/api/version" >/dev/null 2>&1; then
+  ok "Ollama ya está corriendo en $CONNECT_HOST"
+else
+  info "Iniciando Ollama..."
+  STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/opencode-local"
+  mkdir -p "$STATE_DIR"
+  LOG="$STATE_DIR/ollama.log"
+
+  if command -v setsid >/dev/null 2>&1; then
+    setsid env OLLAMA_KEEP_ALIVE="$KEEP_ALIVE" ollama serve >"$LOG" 2>&1 </dev/null &
+  else
+    nohup env OLLAMA_KEEP_ALIVE="$KEEP_ALIVE" ollama serve >"$LOG" 2>&1 </dev/null &
+    disown 2>/dev/null || true
+  fi
+
+  for _ in $(seq 1 60); do
+    if curl -fsS -m 2 "$OLLAMA_BASE/api/version" >/dev/null 2>&1; then
+      break
+    fi
+    sleep 0.5
+  done
+
+  if ! curl -fsS -m 2 "$OLLAMA_BASE/api/version" >/dev/null 2>&1; then
+    warn "Ollama no respondió en $OLLAMA_BASE."
+    if [ -f "$LOG" ]; then
+      warn "Últimas líneas de $LOG:"
+      tail -n 20 "$LOG" >&2 || true
+    fi
+    die "No se pudo iniciar Ollama."
+  fi
+  ok "Ollama iniciado en $CONNECT_HOST"
+fi
+
+# 2) Modelo ---------------------------------------------------------------
+if ollama list 2>/dev/null | awk 'NR > 1 { print $1 }' | grep -Fxq "$MODEL"; then
+  ok "Modelo disponible: $MODEL"
+elif [ "$PULL" -eq 1 ]; then
+  info "Descargando $MODEL (puede tardar)..."
+  ollama pull "$MODEL"
+  ok "Modelo descargado: $MODEL"
+else
+  die "El modelo $MODEL no está descargado (se usó --no-pull)."
+fi
+
+# 2b) Contexto: crear una variante con num_ctx fijo si hace falta.
+EFFECTIVE_MODEL="$MODEL"
+if [ -n "$CONTEXT" ] && [ "$CONTEXT" != "0" ]; then
+  MAX_CTX="$(ollama show "$MODEL" 2>/dev/null | awk '/context length/ { print $3; exit }')"
+  if [ -n "$MAX_CTX" ] && [ "$CONTEXT" -gt "$MAX_CTX" ]; then
+    warn "El modelo soporta $MAX_CTX de contexto; ajustando de $CONTEXT a $MAX_CTX."
+    CONTEXT="$MAX_CTX"
+  fi
+
+  if [ "$CONTEXT" -gt 0 ]; then
+    EFFECTIVE_MODEL="${MODEL}-ctx${CONTEXT}"
+    MODEFILE="$(mktemp "${TMPDIR:-/tmp}/opencode-local-modelfile.XXXXXX")"
+    printf 'FROM %s\nPARAMETER num_ctx %s\n' "$MODEL" "$CONTEXT" >"$MODEFILE"
+
+    if ollama show "$EFFECTIVE_MODEL" 2>/dev/null | grep -Eq "num_ctx[[:space:]]+${CONTEXT}([[:space:]]|$)"; then
+      ok "Variante con contexto: $EFFECTIVE_MODEL (${CONTEXT} tokens)"
+    else
+      info "Creando variante $EFFECTIVE_MODEL con contexto ${CONTEXT}..."
+      CREATE_LOG="$(mktemp "${TMPDIR:-/tmp}/opencode-local-create.XXXXXX")"
+      if ! ollama create "$EFFECTIVE_MODEL" -f "$MODEFILE" >"$CREATE_LOG" 2>&1; then
+        cat "$CREATE_LOG" >&2
+        rm -f "$MODEFILE" "$CREATE_LOG"
+        die "No se pudo crear la variante $EFFECTIVE_MODEL."
+      fi
+      rm -f "$CREATE_LOG"
+      ok "Variante creada: $EFFECTIVE_MODEL (${CONTEXT} tokens)"
+    fi
+    rm -f "$MODEFILE"
+  fi
+fi
+
+# 3) Precarga -------------------------------------------------------------
+info "Cargando $EFFECTIVE_MODEL en memoria..."
+if curl -fsS -m 180 "$OLLAMA_BASE/api/generate" \
+  -H 'Content-Type: application/json' \
+  -d "{\"model\":\"$EFFECTIVE_MODEL\",\"prompt\":\"ok\",\"stream\":false,\"options\":{\"num_predict\":1},\"keep_alive\":\"$KEEP_ALIVE\"}" \
+  >/dev/null 2>&1; then
+  ok "Modelo cargado (keep_alive=$KEEP_ALIVE)"
+else
+  warn "No pude precargar el modelo; OpenCode lo cargará en el primer mensaje."
+fi
+
+# 4) Configuración --------------------------------------------------------
+CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/opencode"
+mkdir -p "$CONFIG_DIR"
+if [ -f "$CONFIG_DIR/opencode.jsonc" ]; then
+  CONFIG="$CONFIG_DIR/opencode.jsonc"
+elif [ -f "$CONFIG_DIR/opencode.json" ]; then
+  CONFIG="$CONFIG_DIR/opencode.json"
+else
+  CONFIG="$CONFIG_DIR/opencode.jsonc"
+fi
+
+if command -v python3 >/dev/null 2>&1; then
+  python3 - "$CONFIG" "ollama/$EFFECTIVE_MODEL" <<'PY'
+import sys
+
+path, value = sys.argv[1], sys.argv[2]
+try:
+    with open(path, encoding="utf-8") as f:
+        src = f.read()
+except FileNotFoundError:
+    src = ""
+
+def find_top_level_model(s):
+    i = 0
+    n = len(s)
+    depth = 0
+    in_str = False
+    esc = False
+    line_comment = False
+    block_comment = False
+    str_start = 0
+    str_depth = 0
+
+    while i < n:
+        c = s[i]
+        nxt = s[i + 1] if i + 1 < n else ""
+
+        if line_comment:
+            if c == "\n":
+                line_comment = False
+            i += 1
+            continue
+
+        if block_comment:
+            if c == "*" and nxt == "/":
+                block_comment = False
+                i += 2
+                continue
+            i += 1
+            continue
+
+        if in_str:
+            if esc:
+                esc = False
+            elif c == "\\":
+                esc = True
+            elif c == '"':
+                in_str = False
+                if s[str_start:i] == "model" and str_depth == 1:
+                    k = i + 1
+                    while k < n and s[k] in " \t\r\n":
+                        k += 1
+                    if k < n and s[k] == ":":
+                        v = k + 1
+                        while v < n and s[v] in " \t\r\n":
+                            v += 1
+                        if v < n and s[v] == '"':
+                            e = v + 1
+                            vesc = False
+                            while e < n:
+                                ch = s[e]
+                                if vesc:
+                                    vesc = False
+                                elif ch == "\\":
+                                    vesc = True
+                                elif ch == '"':
+                                    return (v, e + 1)
+                                e += 1
+                            return (v, n)
+                        e = v
+                        d = 0
+                        while e < n:
+                            ch = s[e]
+                            if ch in "{[":
+                                d += 1
+                            elif ch in "}]":
+                                if d == 0:
+                                    break
+                                d -= 1
+                            elif ch == "," and d == 0:
+                                break
+                            e += 1
+                        while e > v and s[e - 1] in " \t\r\n":
+                            e -= 1
+                        return (v, e)
+            i += 1
+            continue
+
+        if c == "/" and nxt == "/":
+            line_comment = True
+            i += 2
+            continue
+        if c == "/" and nxt == "*":
+            block_comment = True
+            i += 2
+            continue
+        if c == '"':
+            in_str = True
+            esc = False
+            str_start = i + 1
+            str_depth = depth
+            i += 1
+            continue
+        if c in "{[":
+            depth += 1
+        elif c in "}]":
+            depth -= 1
+        i += 1
+
+    return None
+
+escaped = value.replace("\\", "\\\\").replace('"', '\\"')
+span = find_top_level_model(src)
+
+if span is not None:
+    a, b = span
+    src = src[:a] + '"' + escaped + '"' + src[b:]
+elif "{" in src:
+    idx = src.index("{")
+    rest = src[idx + 1:]
+    if rest.lstrip().startswith("}"):
+        src = src[:idx + 1] + '\n  "model": "' + escaped + '"\n' + rest
+    else:
+        src = src[:idx + 1] + '\n  "model": "' + escaped + '",' + rest
+else:
+    src = '{ "model": "' + escaped + '" }\n'
+
+with open(path, "w", encoding="utf-8") as f:
+    f.write(src)
+PY
+  ok "Configuración: $CONFIG → ollama/$EFFECTIVE_MODEL"
+else
+  warn "No encontré python3; no pude actualizar $CONFIG automáticamente."
+  warn "Asegúrate de que contenga: \"model\": \"ollama/$EFFECTIVE_MODEL\""
+fi
+
+# 5) Verificación en OpenCode --------------------------------------------
+command -v opencode >/dev/null 2>&1 || die "No encontré 'opencode' en PATH."
+
+opencode reload >/dev/null 2>&1 || true
+
+found=0
+for _ in $(seq 1 20); do
+  if opencode models 2>/dev/null | grep -Fxq "ollama/$EFFECTIVE_MODEL"; then
+    found=1
+    break
+  fi
+  sleep 0.5
+done
+
+if [ "$found" -ne 1 ]; then
+  warn "OpenCode aún no lista el modelo; reiniciando el servicio en segundo plano..."
+  opencode service restart >/dev/null 2>&1 || true
+  for _ in $(seq 1 20); do
+    if opencode models 2>/dev/null | grep -Fxq "ollama/$EFFECTIVE_MODEL"; then
+      found=1
+      break
+    fi
+    sleep 0.5
+  done
+fi
+
+if [ "$found" -eq 1 ]; then
+  ok "OpenCode detecta ollama/$EFFECTIVE_MODEL"
+else
+  warn "OpenCode todavía no lista ollama/$EFFECTIVE_MODEL. Prueba: opencode reload"
+fi
+
+case "$MODEL" in
+  *1.5b*|*1.5B*)
+    info "Nota: un modelo de 1.5B puede fallar al usar herramientas (editar archivos, ejecutar comandos)."
+    ;;
+esac
+
+# 6) Abrir OpenCode -------------------------------------------------------
+say ""
+if [ "$LAUNCH" -eq 1 ]; then
+  say "==> Abriendo OpenCode con $EFFECTIVE_MODEL"
+  if [ "${#args[@]}" -gt 0 ]; then
+    exec opencode "${args[@]}"
+  else
+    exec opencode
+  fi
+else
+  ok "Todo listo. Abre OpenCode con: opencode"
+fi
