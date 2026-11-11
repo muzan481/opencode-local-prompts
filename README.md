@@ -65,6 +65,28 @@ Si ya tienes la carpeta copiada localmente, entra en ella (cambia la ruta por el
 cd ~/opencode-local-prompts
 ```
 
+Si no sabes dónde quedó la carpeta, puedes buscarla con alguno de estos comandos:
+
+```bash
+# Busca la carpeta por nombre desde tu carpeta personal (puede tardar un poco)
+find ~ -type d -name "opencode-local-prompts" 2>/dev/null
+
+# Busca desde todo el disco (más lento)
+find / -type d -name "opencode-local-prompts" 2>/dev/null
+
+# Si tienes locate instalado, es más rápido
+locate opencode-local-prompts
+
+# Comprueba si está en la carpeta actual o en tu carpeta personal
+ls -d ./opencode-local-prompts ~/opencode-local-prompts 2>/dev/null
+```
+
+El comando mostrará la ruta de la carpeta. Entra en ella con `cd` y esa ruta, por ejemplo:
+
+```bash
+cd /ruta/que/te/mostro/el/comando/opencode-local-prompts
+```
+
 ## Paso 2. Instalar el script `opencode-local`
 
 El script debe quedar en una carpeta que esté en tu `PATH`.
