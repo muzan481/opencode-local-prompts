@@ -16,14 +16,14 @@ Los prompts y la asignación de lenguajes se basan en pruebas prácticas: cada m
 ├── README.md
 ├── script/
 │   └── opencode-local
-├── qwen2.5-coder:1.5b/
+├── qwen2.5-coder-1.5b/
 │   ├── system_prompt_qwen2.5-coder_lisp_typescript.md
 │   └── system_prompt_qwen2.5-coder_lua_typescript.md
-└── deepseek-r1:1.5b/
+└── deepseek-r1-1.5b/
     └── system_prompt_deepseek-r1_python.md
 ```
 
-Cada carpeta agrupa los archivos de cada componente: `script/` (lanzador), `qwen2.5-coder:1.5b/` (prompts de Qwen) y `deepseek-r1:1.5b/` (prompt de DeepSeek).
+Cada carpeta agrupa los archivos de cada componente: `script/` (lanzador), `qwen2.5-coder-1.5b/` (prompts de Qwen) y `deepseek-r1-1.5b/` (prompt de DeepSeek).
 
 ## Qué hace bien cada modelo (según pruebas)
 
@@ -234,9 +234,9 @@ mkdir -p ~/.config/opencode/agents
 # desde la raíz de este repositorio (ajusta REPO si hace falta)
 REPO="$(pwd)"
 
-ln -sf "$REPO/qwen2.5-coder:1.5b/system_prompt_qwen2.5-coder_lisp_typescript.md" ~/.config/opencode/agents/qwen-lisp.md
-ln -sf "$REPO/qwen2.5-coder:1.5b/system_prompt_qwen2.5-coder_lua_typescript.md" ~/.config/opencode/agents/qwen-lua.md
-ln -sf "$REPO/deepseek-r1:1.5b/system_prompt_deepseek-r1_python.md" ~/.config/opencode/agents/deepseek-python.md
+ln -sf "$REPO/qwen2.5-coder-1.5b/system_prompt_qwen2.5-coder_lisp_typescript.md" ~/.config/opencode/agents/qwen-lisp.md
+ln -sf "$REPO/qwen2.5-coder-1.5b/system_prompt_qwen2.5-coder_lua_typescript.md" ~/.config/opencode/agents/qwen-lua.md
+ln -sf "$REPO/deepseek-r1-1.5b/system_prompt_deepseek-r1_python.md" ~/.config/opencode/agents/deepseek-python.md
 ```
 
 > Usar enlaces simbólicos (`ln -sf`) permite que, si actualizas los prompts en el repo, OpenCode vea los cambios tras recargar. Si prefieres copiar, usa `cp` en lugar de `ln -sf`.
