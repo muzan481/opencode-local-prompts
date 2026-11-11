@@ -55,7 +55,7 @@ python3 --version
 ## Paso 1. Clonar o copiar este repositorio
 
 ```bash
-git clone <URL_DE_TU_REPOSITORIO>.git opencode-local-prompts
+git clone https://github.com/muzan481/opencode-local-prompts.git opencode-local-prompts
 cd opencode-local-prompts
 ```
 
