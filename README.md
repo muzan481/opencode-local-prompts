@@ -59,10 +59,10 @@ git clone https://github.com/muzan481/opencode-local-prompts.git opencode-local-
 cd opencode-local-prompts
 ```
 
-Si ya tienes la carpeta copiada localmente, entra en ella:
+Si ya tienes la carpeta copiada localmente, entra en ella (cambia la ruta por el lugar donde la guardaste). Por ejemplo, si está en tu carpeta personal:
 
 ```bash
-cd /ruta/a/opencode-local-prompts
+cd ~/opencode-local-prompts
 ```
 
 ## Paso 2. Instalar el script `opencode-local`
