@@ -116,14 +116,58 @@ OPENCODE_LOCAL_CONTEXT=16384 opencode-local
 
 ## Paso 3. Descargar los modelos de Ollama
 
-Descarga los modelos base (el script puede hacerlo, pero es mejor tenerlos listos):
+Los modelos son los "cerebros" que usarás en tu PC. Cada uno pesa alrededor de **1 GB**, así que necesitas conexión a internet y espacio libre en el disco (al menos **4 GB libres** para ir cómodo).
+
+Hazlo en este orden:
+
+### 3.1 Comprueba que Ollama está instalado y encendido
+
+```bash
+ollama --version
+```
+
+- Si ves un número de versión, sigue.
+- Si ves `command not found: ollama` (no encuentra Ollama), instálalo y vuelve a intentar:
+  ```bash
+  curl -fsSL https://ollama.com/install.sh | sh
+  ```
+  (Necesitas `curl`. Si no lo tienes: en Ubuntu/Debian `sudo apt update && sudo apt install -y curl`; en Fedora `sudo dnf install -y curl`).
+
+Ahora comprueba que Ollama responde:
+
+```bash
+ollama list
+```
+
+- Si muestra una lista (aunque esté vacía), va bien.
+- Si dice que **no se puede conectar** o "connection refused", Ollama no está encendido. Enciéndelo:
+  ```bash
+  ollama serve
+  ```
+  Déjalo abierto en esa terminal y abre **otra terminal** para seguir con los comandos de abajo. (En la siguiente vez, el script `opencode-local` intentará encenderlo por ti).
+
+### 3.2 Descarga los modelos base
+
+Ejecuta estos dos comandos (uno por uno). Pueden tardar varios minutos según tu internet:
 
 ```bash
 ollama pull qwen2.5-coder:1.5b
 ollama pull deepseek-r1:1.5b
 ```
 
-Crea las variantes con contexto de 16384 (el script también las crea; manualmente sería):
+**Si algo sale mal aquí:**
+
+| Lo que ves en la terminal | Qué significa | Qué hacer |
+|---|---|---|
+| `Error: ... connection refused` / no conecta | Ollama no está encendido | Ejecuta `ollama serve` en otra terminal y repite el `ollama pull ...` |
+| La descarga se corta, va muy lenta o dice "unexpected EOF" / "network" | Se cortó internet o la descarga falló a medias | Vuelve a ejecutar el mismo `ollama pull ...`; retoma o descarga de nuevo |
+| `no space left on device` / falta de espacio | El disco está lleno | Libera espacio (borra archivos o modelos que no uses con `ollama rm <nombre>`) y repite |
+| `model ... not found` | El nombre está mal escrito | Copia y pega el comando tal cual está escrito arriba |
+| `permission denied` | No tienes permiso en la carpeta de Ollama | Prueba con `sudo ollama pull ...` o revisa que Ollama esté bien instalado para tu usuario |
+
+### 3.3 Crea las variantes con más memoria de conversación (contexto 16384)
+
+Estas variantes permiten que el modelo "recuerde" más texto en cada conversación. El script las crea solo, pero es mejor dejarlas listas:
 
 ```bash
 printf 'FROM qwen2.5-coder:1.5b\nPARAMETER num_ctx 16384\n' > /tmp/Modelfile.qwen
@@ -133,13 +177,43 @@ printf 'FROM deepseek-r1:1.5b\nPARAMETER num_ctx 16384\n' > /tmp/Modelfile.deeps
 ollama create deepseek-r1:1.5b-ctx16384 -f /tmp/Modelfile.deepseek
 ```
 
-Comprueba:
+- Si dice que el modelo base **no existe**, primero repite el paso 3.2 para ese modelo.
+- Si dice "file not found" para el Modelfile, vuelve a ejecutar la línea `printf ...` de ese modelo y luego el `ollama create ...`.
+
+### 3.4 Comprueba que todo quedó bien
 
 ```bash
 ollama list
 ```
 
-Deberías ver `qwen2.5-coder:1.5b`, `qwen2.5-coder:1.5b-ctx16384`, `deepseek-r1:1.5b` y `deepseek-r1:1.5b-ctx16384`.
+Deberías ver estas 4 líneas (los tamaños y fechas pueden variar):
+
+- `qwen2.5-coder:1.5b`
+- `qwen2.5-coder:1.5b-ctx16384`
+- `deepseek-r1:1.5b`
+- `deepseek-r1:1.5b-ctx16384`
+
+Si falta alguna, repite solo la parte que falló (3.2 para un modelo base, 3.3 para una variante `-ctx16384`).
+
+### 3.5 Si el script `opencode-local` falla
+
+El script necesita `bash`, `curl`, `python3` y `ollama`. Si al ejecutarlo ves errores:
+
+| Error o situación | Qué hacer |
+|---|---|
+| `command not found: opencode-local` | No está instalado o no está en tu PATH. Repite el Paso 2 y comprueba con `opencode-local --help` |
+| `command not found: ollama` | Instala Ollama (paso 3.1) |
+| `command not found: curl` o `python3` | Instala lo que falte: `sudo apt update && sudo apt install -y curl python3` (Ubuntu/Debian) o `sudo dnf install -y curl python3` (Fedora) |
+| "No se pudo iniciar Ollama" / no responde | Abre `ollama serve` en otra terminal, revisa que no haya otro programa usando el puerto, y vuelve a ejecutar el script |
+| "El modelo ... no está descargado" (con `--no-pull`) | Quita `--no-pull` o descarga el modelo con `ollama pull ...` |
+| "No se pudo crear la variante..." | Asegúrate de que el modelo base ya está descargado (`ollama list`) y que hay espacio en disco |
+| El script se queda cargando mucho tiempo | Es normal la primera vez (descarga/precarga). Si se corta, revisa tu internet y repite; puedes usar `--no-launch` para solo preparar sin abrir OpenCode |
+
+Para ver más detalle cuando algo falla, ejecuta:
+
+```bash
+bash -x opencode-local --no-launch
+```
 
 ## Paso 4. Instalar los system prompts como agentes de OpenCode
 
