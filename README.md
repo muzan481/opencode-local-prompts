@@ -99,17 +99,18 @@ opencode-local --help
 ### Qué hace `opencode-local`
 
 - Comprueba/inicia Ollama si no responde.
-- Descarga el modelo si falta (salvo `--no-pull`).
-- Crea una variante con contexto fijo (`MODEL-ctx16384`, por defecto) ajustando `num_ctx`.
-- Precarga el modelo en memoria (`keep_alive`).
-- Ajusta la configuración de OpenCode para usar `ollama/<modelo-efectivo>` y abre OpenCode.
+- **Prepara los dos modelos predeterminados** que usan los agentes de este repo: `qwen2.5-coder:1.5b` y `deepseek-r1:1.5b`.
+- Si falta alguno, lo descarga automáticamente (salvo `--no-pull`). Si usas `--no-pull` y falta alguno, muestra qué modelos faltan y los comandos exactos para instalarlos.
+- Crea las variantes con contexto fijo (`-ctx16384`, por defecto) ajustando `num_ctx` para los modelos predeterminados.
+- Precarga el modelo activo en memoria (`keep_alive`).
+- Ajusta la configuración de OpenCode para usar el modelo activo y abre OpenCode.
 
 Opciones y variables útiles:
 
 ```bash
-opencode-local                 # usa qwen2.5-coder:1.5b y abre OpenCode
-opencode-local --no-launch     # solo prepara el entorno
-opencode-local --no-pull       # no descarga si falta el modelo
+opencode-local                 # prepara qwen y deepseek, usa qwen y abre OpenCode
+opencode-local --no-launch     # solo prepara el entorno (ambos modelos)
+opencode-local --no-pull       # no descarga si falta: muestra qué falta y los comandos para instalarlo
 MODEL=deepseek-r1:1.5b opencode-local --no-launch
 OPENCODE_LOCAL_CONTEXT=16384 opencode-local
 ```
@@ -118,7 +119,13 @@ OPENCODE_LOCAL_CONTEXT=16384 opencode-local
 
 Los modelos son los "cerebros" que usarás en tu PC. Cada uno pesa alrededor de **1 GB**, así que necesitas conexión a internet y espacio libre en el disco (al menos **4 GB libres** para ir cómodo).
 
-Hazlo en este orden:
+Este repositorio usa **dos modelos predeterminados**:
+- `qwen2.5-coder:1.5b` (agentes `qwen-lisp` y `qwen-lua`)
+- `deepseek-r1:1.5b` (agente `deepseek-python`)
+
+El script `opencode-local` revisa ambos: si ya están instalados, no los vuelve a descargar; si falta alguno, lo instala (y crea su variante `-ctx16384`). Si ejecutas el script con `--no-pull` y falta algún modelo, la terminal mostrará qué modelos pretende instalar y los comandos exactos que debes ejecutar para instalarlos.
+
+También puedes instalarlos a mano siguiendo estos pasos:
 
 ### 3.1 Comprueba que Ollama está instalado y encendido
 
@@ -205,7 +212,7 @@ El script necesita `bash`, `curl`, `python3` y `ollama`. Si al ejecutarlo ves er
 | `command not found: ollama` | Instala Ollama (paso 3.1) |
 | `command not found: curl` o `python3` | Instala lo que falte: `sudo apt update && sudo apt install -y curl python3` (Ubuntu/Debian) o `sudo dnf install -y curl python3` (Fedora) |
 | "No se pudo iniciar Ollama" / no responde | Abre `ollama serve` en otra terminal, revisa que no haya otro programa usando el puerto, y vuelve a ejecutar el script |
-| "El modelo ... no está descargado" (con `--no-pull`) | Quita `--no-pull` o descarga el modelo con `ollama pull ...` |
+| "Faltan modelos..." / "Faltan estos modelos..." (con `--no-pull`) | El script te mostrará los comandos exactos. Cópialos y ejecútalos (por ejemplo `ollama pull qwen2.5-coder:1.5b` y `ollama pull deepseek-r1:1.5b`, y si aplica sus variantes `-ctx16384`), o vuelve a ejecutar el script sin `--no-pull` |
 | "No se pudo crear la variante..." | Asegúrate de que el modelo base ya está descargado (`ollama list`) y que hay espacio en disco |
 | El script se queda cargando mucho tiempo | Es normal la primera vez (descarga/precarga). Si se corta, revisa tu internet y repite; puedes usar `--no-launch` para solo preparar sin abrir OpenCode |
 

@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
-# opencode-local — prepara Ollama + modelo local y (opcionalmente) abre OpenCode.
+# opencode-local — prepara Ollama + modelos locales y (opcionalmente) abre OpenCode.
 set -euo pipefail
 
-MODEL="${MODEL:-qwen2.5-coder:1.5b}"
+DEFAULT_MODELS=("qwen2.5-coder:1.5b" "deepseek-r1:1.5b")
+MODEL="${MODEL:-${DEFAULT_MODELS[0]}}"
 OLLAMA_HOST="${OLLAMA_HOST:-127.0.0.1:11434}"
 export OLLAMA_HOST
 
@@ -27,23 +28,27 @@ usage() {
   cat <<EOF
 Uso: opencode-local [opciones] [directorio]
 
-Prepara Ollama, el modelo local y la configuración; luego abre OpenCode.
+Prepara Ollama y los modelos locales necesarios; luego abre OpenCode.
+
+Modelos predeterminados que prepara este script:
+  - qwen2.5-coder:1.5b   (agentes qwen-lisp y qwen-lua)
+  - deepseek-r1:1.5b     (agente deepseek-python)
 
 Opciones:
   --no-launch   Solo prepara el entorno, no abre OpenCode.
-  --no-pull     No descarga el modelo si falta (falla en su lugar).
+  --no-pull     No descarga modelos si faltan. Muestra qué falta y los comandos para instalarlos.
   -h, --help    Muestra esta ayuda.
 
 Variables:
-  MODEL                     Modelo de Ollama (por defecto: $MODEL)
+  MODEL                     Modelo activo para configurar/abrir OpenCode (por defecto: ${DEFAULT_MODELS[0]})
   OLLAMA_HOST               Host de Ollama (por defecto: $OLLAMA_HOST)
   OPENCODE_LOCAL_KEEP_ALIVE Tiempo que el modelo queda cargado (por defecto: $KEEP_ALIVE)
   OPENCODE_LOCAL_CONTEXT    Contexto a forzar; 0 usa el modelo tal cual (por defecto: $CONTEXT)
 
 Ejemplos:
   opencode-local
-  MODEL=qwen2.5-coder:7b opencode-local
   opencode-local --no-launch
+  MODEL=deepseek-r1:1.5b opencode-local --no-launch
 EOF
 }
 
@@ -63,11 +68,56 @@ ok()   { printf '✓ %s\n' "$*"; }
 warn() { printf '⚠ %s\n' "$*" >&2; }
 die()  { printf '✗ %s\n' "$*" >&2; exit 1; }
 
-say "==> Preparando OpenCode con modelo local: $MODEL"
+model_installed() {
+  ollama list 2>/dev/null | awk 'NR > 1 { print $1 }' | grep -Fxq "$1"
+}
+
+variant_name() {
+  local base="$1" ctx="$2"
+  printf '%s-ctx%s' "$base" "$ctx"
+}
+
+variant_ready() {
+  local base="$1" ctx="$2" var
+  var="$(variant_name "$base" "$ctx")"
+  ollama show "$var" 2>/dev/null | grep -Eq "num_ctx[[:space:]]+${ctx}([[:space:]]|$)"
+}
+
+ensure_variant() {
+  local base="$1" ctx="$2" var modefile create_log max_ctx
+  [ -n "$ctx" ] && [ "$ctx" != "0" ] || return 0
+
+  max_ctx="$(ollama show "$base" 2>/dev/null | awk '/context length/ { print $3; exit }')"
+  if [ -n "$max_ctx" ] && [ "$ctx" -gt "$max_ctx" ]; then
+    warn "El modelo $base soporta $max_ctx de contexto; usando $max_ctx."
+    ctx="$max_ctx"
+  fi
+  [ "$ctx" -gt 0 ] || return 0
+
+  var="$(variant_name "$base" "$ctx")"
+  if variant_ready "$base" "$ctx"; then
+    ok "Variante con contexto: $var (${ctx} tokens)"
+    return 0
+  fi
+
+  info "Creando variante $var con contexto ${ctx}..."
+  modefile="$(mktemp "${TMPDIR:-/tmp}/opencode-local-modelfile.XXXXXX")"
+  printf 'FROM %s\nPARAMETER num_ctx %s\n' "$base" "$ctx" >"$modefile"
+  create_log="$(mktemp "${TMPDIR:-/tmp}/opencode-local-create.XXXXXX")"
+  if ! ollama create "$var" -f "$modefile" >"$create_log" 2>&1; then
+    cat "$create_log" >&2
+    rm -f "$modefile" "$create_log"
+    die "No se pudo crear la variante $var."
+  fi
+  rm -f "$modefile" "$create_log"
+  ok "Variante creada: $var (${ctx} tokens)"
+}
+
+say "==> Preparando OpenCode con modelos locales"
 say ""
 
 # 1) Ollama ---------------------------------------------------------------
-command -v ollama >/dev/null 2>&1 || die "No encontré 'ollama' en PATH."
+command -v ollama >/dev/null 2>&1 || die "No encontré 'ollama' en PATH. Instálalo con: curl -fsSL https://ollama.com/install.sh | sh"
 
 if curl -fsS -m 2 "$OLLAMA_BASE/api/version" >/dev/null 2>&1; then
   ok "Ollama ya está corriendo en $CONNECT_HOST"
@@ -102,46 +152,81 @@ else
   ok "Ollama iniciado en $CONNECT_HOST"
 fi
 
-# 2) Modelo ---------------------------------------------------------------
-if ollama list 2>/dev/null | awk 'NR > 1 { print $1 }' | grep -Fxq "$MODEL"; then
-  ok "Modelo disponible: $MODEL"
-elif [ "$PULL" -eq 1 ]; then
-  info "Descargando $MODEL (puede tardar)..."
-  ollama pull "$MODEL"
-  ok "Modelo descargado: $MODEL"
-else
-  die "El modelo $MODEL no está descargado (se usó --no-pull)."
+# 2) Modelos predeterminados ----------------------------------------------
+say ""
+say "Modelos predeterminados que usa este script:"
+for m in "${DEFAULT_MODELS[@]}"; do
+  say "  - $m"
+done
+say ""
+
+MISSING=()
+for m in "${DEFAULT_MODELS[@]}"; do
+  if model_installed "$m"; then
+    ok "Modelo disponible: $m"
+  else
+    MISSING+=("$m")
+  fi
+done
+
+if [ "${#MISSING[@]}" -gt 0 ]; then
+  warn "Faltan estos modelos: ${MISSING[*]}"
+  if [ "$PULL" -eq 1 ]; then
+    for m in "${MISSING[@]}"; do
+      info "Descargando $m (puede tardar)..."
+      ollama pull "$m"
+      ok "Modelo descargado: $m"
+    done
+  else
+    say ""
+    say "Para instalar los modelos predeterminados que usa este script, ejecuta:"
+    for m in "${MISSING[@]}"; do
+      say "  ollama pull $m"
+    done
+    if [ -n "$CONTEXT" ] && [ "$CONTEXT" != "0" ]; then
+      say ""
+      say "Después crea sus variantes de contexto:"
+      for m in "${MISSING[@]}"; do
+        say "  printf 'FROM %s\\nPARAMETER num_ctx %s\\n' '$m' '$CONTEXT' | ollama create $(variant_name "$m" "$CONTEXT") -f -"
+      done
+    fi
+    say ""
+    die "Faltan modelos (se usó --no-pull). Ejecuta los comandos de arriba y vuelve a intentarlo."
+  fi
 fi
 
-# 2b) Contexto: crear una variante con num_ctx fijo si hace falta.
+# Asegurar también el modelo activo si el usuario lo cambió y no es uno de los predeterminados.
+if ! model_installed "$MODEL"; then
+  warn "El modelo activo solicitado no está instalado: $MODEL"
+  if [ "$PULL" -eq 1 ]; then
+    info "Descargando $MODEL (puede tardar)..."
+    ollama pull "$MODEL"
+    ok "Modelo descargado: $MODEL"
+  else
+    say ""
+    say "Para instalar el modelo activo solicitado, ejecuta:"
+    say "  ollama pull $MODEL"
+    if [ -n "$CONTEXT" ] && [ "$CONTEXT" != "0" ]; then
+      say "  printf 'FROM %s\\nPARAMETER num_ctx %s\\n' '$MODEL' '$CONTEXT' | ollama create $(variant_name "$MODEL" "$CONTEXT") -f -"
+    fi
+    die "Falta el modelo activo (se usó --no-pull)."
+  fi
+fi
+
+# 2b) Variantes de contexto -----------------------------------------------
+for m in "${DEFAULT_MODELS[@]}"; do
+  ensure_variant "$m" "$CONTEXT"
+done
+# Variante del activo si es distinto
+active_is_default=0
+for m in "${DEFAULT_MODELS[@]}"; do [ "$m" = "$MODEL" ] && active_is_default=1; done
+if [ "$active_is_default" -eq 0 ]; then
+  ensure_variant "$MODEL" "$CONTEXT"
+fi
+
 EFFECTIVE_MODEL="$MODEL"
 if [ -n "$CONTEXT" ] && [ "$CONTEXT" != "0" ]; then
-  MAX_CTX="$(ollama show "$MODEL" 2>/dev/null | awk '/context length/ { print $3; exit }')"
-  if [ -n "$MAX_CTX" ] && [ "$CONTEXT" -gt "$MAX_CTX" ]; then
-    warn "El modelo soporta $MAX_CTX de contexto; ajustando de $CONTEXT a $MAX_CTX."
-    CONTEXT="$MAX_CTX"
-  fi
-
-  if [ "$CONTEXT" -gt 0 ]; then
-    EFFECTIVE_MODEL="${MODEL}-ctx${CONTEXT}"
-    MODEFILE="$(mktemp "${TMPDIR:-/tmp}/opencode-local-modelfile.XXXXXX")"
-    printf 'FROM %s\nPARAMETER num_ctx %s\n' "$MODEL" "$CONTEXT" >"$MODEFILE"
-
-    if ollama show "$EFFECTIVE_MODEL" 2>/dev/null | grep -Eq "num_ctx[[:space:]]+${CONTEXT}([[:space:]]|$)"; then
-      ok "Variante con contexto: $EFFECTIVE_MODEL (${CONTEXT} tokens)"
-    else
-      info "Creando variante $EFFECTIVE_MODEL con contexto ${CONTEXT}..."
-      CREATE_LOG="$(mktemp "${TMPDIR:-/tmp}/opencode-local-create.XXXXXX")"
-      if ! ollama create "$EFFECTIVE_MODEL" -f "$MODEFILE" >"$CREATE_LOG" 2>&1; then
-        cat "$CREATE_LOG" >&2
-        rm -f "$MODEFILE" "$CREATE_LOG"
-        die "No se pudo crear la variante $EFFECTIVE_MODEL."
-      fi
-      rm -f "$CREATE_LOG"
-      ok "Variante creada: $EFFECTIVE_MODEL (${CONTEXT} tokens)"
-    fi
-    rm -f "$MODEFILE"
-  fi
+  EFFECTIVE_MODEL="$(variant_name "$MODEL" "$CONTEXT")"
 fi
 
 # 3) Precarga -------------------------------------------------------------
