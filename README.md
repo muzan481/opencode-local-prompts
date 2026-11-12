@@ -1,13 +1,12 @@
 # opencode-local-prompts
 
-Repositorio listo para usar **OpenCode** con modelos locales de **Ollama** (1.5B), aprovechando al máximo las fortalezas reales de cada modelo mediante *system prompts* instalados como agentes.
+Repositorio listo para usar **OpenCode** con modelos locales de **Ollama**, aprovechando las fortalezas reales de **Qwen2.5-Coder 3B** mediante *system prompts* instalados como agentes.
 
 Incluye:
 - Un script (`opencode-local`) que prepara Ollama, el modelo y OpenCode.
-- Prompts/agentes para **Qwen2.5-Coder 1.5B** (TypeScript, Lua y Lisp funcional).
-- Prompt/agente para **DeepSeek-R1 1.5B** (solo Python).
+- Prompts/agentes para **Qwen2.5-Coder 3B** (TypeScript, Lua, Lisp funcional y Python).
 
-Los prompts y la asignación de lenguajes se basan en pruebas prácticas: cada modelo se usa solo donde es fiable.
+Los prompts y la asignación de lenguajes se basan en pruebas prácticas para que cada agente se use donde es más fiable.
 
 ## Contenido del repositorio
 
@@ -16,33 +15,31 @@ Los prompts y la asignación de lenguajes se basan en pruebas prácticas: cada m
 ├── README.md
 ├── script/
 │   └── opencode-local
-├── qwen2.5-coder-1.5b/
-│   ├── system_prompt_qwen2.5-coder_lisp_typescript.md
-│   └── system_prompt_qwen2.5-coder_lua_typescript.md
-└── deepseek-r1-1.5b/
-    └── system_prompt_deepseek-r1_python.md
+└── qwen2.5-coder-3b/
+    ├── system_prompt_qwen2.5-coder_lisp_typescript.md
+    ├── system_prompt_qwen2.5-coder_lua_typescript.md
+    └── system_prompt_qwen2.5-coder_python.md
 ```
 
-Cada carpeta agrupa los archivos de cada componente: `script/` (lanzador), `qwen2.5-coder-1.5b/` (prompts de Qwen) y `deepseek-r1-1.5b/` (prompt de DeepSeek).
+Cada carpeta agrupa los archivos de cada componente: `script/` (lanzador) y `qwen2.5-coder-3b/` (prompts/agentes de Qwen).
 
-## Qué hace bien cada modelo (según pruebas)
+## Qué hace bien cada agente
 
-| Agente | Modelo | Usarlo para | Fiabilidad |
+| Agente | Modelo | Usarlo para | Notas |
 |---|---|---|---|
-| `qwen-lisp` | `ollama/qwen2.5-coder:1.5b` | **TypeScript**, **Common Lisp funcional** (`mapcar`, `reduce`, recursión, `defclass/defmethod`) y también **Lua** | Alta en TS/Lua; buena en Lisp funcional |
-| `qwen-lua` | `ollama/qwen2.5-coder:1.5b` | **TypeScript** y **Lua 5.4** (tablas, metatablas, módulos, `io`, `pcall`) y también **Lisp funcional** | Alta en TS/Lua |
-| `deepseek-python` | `ollama/deepseek-r1:1.5b` | **Solo Python 3.12** (archivos, `json`, `pathlib`, `dataclasses`, clases, type hints) | Buena en Python básico/medio |
+| `qwen-lisp` | `ollama/qwen2.5-coder:3b` | **TypeScript** y **Common Lisp funcional** (`mapcar`, `reduce`, recursión, `defclass/defmethod`) | En Lisp usa `(funcall f x)` cuando la función va en una variable; revisa que las macros empiecen por `(defmacro ...)`. |
+| `qwen-lua` | `ollama/qwen2.5-coder:3b` | **TypeScript** y **Lua 5.4** (tablas, metatablas, módulos, `io`, `pcall`) | Revisa `return M` en módulos, `~=` y bucles `for i = 1, n do`. |
+| `qwen-python` | `ollama/qwen2.5-coder:3b` | **Python 3.12** (archivos, `json`, `pathlib`, `dataclasses`, clases, type hints), y también TS/Lua/Lisp | Buen equilibrio para scripts y utilidades en Python. |
 
-**Límites conocidos:**
-- Qwen: en Lisp, al llamar una función guardada en variable hay que usar `(funcall f x)` (Lisp-2), y a veces escribe `defun` en macros con nombre `mi-*` (el prompt lo corrige, pero conviene revisar).
-- DeepSeek: **no** es fiable en C, C++, Rust, Lua (nativo ni con `lupa`), TypeScript ni Lisp; mezcla sintaxis e inventa funciones. Por eso su agente se limita a Python.
+> **Nota de hardware:** `qwen2.5-coder:3b` (Q4) ocupa ~2 GB. En equipos con poca RAM (por ejemplo 3–4 GB totales y sin GPU) puede ir justo o usar swap; si notas lentitud, prueba con una variante de menos contexto o usa un modelo más pequeño.
 
 ## Requisitos previos
 
-- Linux con `bash`, `curl`, `python3`, `git`.
+- Linux, macOS o Windows (WSL recomendado) con `bash`, `curl`, `python3`, `git`.
 - [Ollama](https://ollama.com/) instalado y accesible (`ollama --version`).
 - [OpenCode](https://opencode.ai/) instalado (`opencode --version`).
-- RAM suficiente para modelos 1.5B (varios GB libres recomendados).
+- Espacio libre en disco: al menos **4 GB** (modelo + variante de contexto).
+- RAM suficiente para un modelo de ~2 GB (recomendado 8 GB o más para ir cómodo).
 
 Comprueba:
 
@@ -121,33 +118,32 @@ opencode-local --help
 ### Qué hace `opencode-local`
 
 - Comprueba/inicia Ollama si no responde.
-- **Prepara los dos modelos predeterminados** que usan los agentes de este repo: `qwen2.5-coder:1.5b` y `deepseek-r1:1.5b`.
-- Si falta alguno, lo descarga automáticamente (salvo `--no-pull`). Si usas `--no-pull` y falta alguno, muestra qué modelos faltan y los comandos exactos para instalarlos.
-- Crea las variantes con contexto fijo (`-ctx16384`, por defecto) ajustando `num_ctx` para los modelos predeterminados.
+- **Prepara el modelo predeterminado** que usan los agentes de este repo: `qwen2.5-coder:3b`.
+- Si falta, lo descarga automáticamente (salvo `--no-pull`). Si usas `--no-pull` y falta, muestra qué modelo falta y los comandos exactos para instalarlo.
+- Crea la variante con contexto fijo (`-ctx16384`, por defecto) ajustando `num_ctx`.
 - Precarga el modelo activo en memoria (`keep_alive`).
 - Ajusta la configuración de OpenCode para usar el modelo activo y abre OpenCode.
 
 Opciones y variables útiles:
 
 ```bash
-opencode-local                 # prepara qwen y deepseek, usa qwen y abre OpenCode
-opencode-local --no-launch     # solo prepara el entorno (ambos modelos)
+opencode-local                 # prepara qwen2.5-coder:3b y abre OpenCode
+opencode-local --no-launch     # solo prepara el entorno
 opencode-local --no-pull       # no descarga si falta: muestra qué falta y los comandos para instalarlo
-MODEL=deepseek-r1:1.5b opencode-local --no-launch
+MODEL=qwen2.5-coder:3b opencode-local --no-launch
 OPENCODE_LOCAL_CONTEXT=16384 opencode-local
 ```
 
-## Paso 3. Descargar los modelos de Ollama
+## Paso 3. Descargar el modelo de Ollama
 
-Los modelos son los "cerebros" que usarás en tu PC. Cada uno pesa alrededor de **1 GB**, así que necesitas conexión a internet y espacio libre en el disco (al menos **4 GB libres** para ir cómodo).
+El modelo es el "cerebro" que usarás en tu PC. `qwen2.5-coder:3b` pesa alrededor de **2 GB**, así que necesitas conexión a internet y espacio libre en el disco (al menos **4 GB libres** para ir cómodo).
 
-Este repositorio usa **dos modelos predeterminados**:
-- `qwen2.5-coder:1.5b` (agentes `qwen-lisp` y `qwen-lua`)
-- `deepseek-r1:1.5b` (agente `deepseek-python`)
+Modelo predeterminado:
+- `qwen2.5-coder:3b` (agentes `qwen-lisp`, `qwen-lua` y `qwen-python`)
 
-El script `opencode-local` revisa ambos: si ya están instalados, no los vuelve a descargar; si falta alguno, lo instala (y crea su variante `-ctx16384`). Si ejecutas el script con `--no-pull` y falta algún modelo, la terminal mostrará qué modelos pretende instalar y los comandos exactos que debes ejecutar para instalarlos.
+El script `opencode-local` lo revisa: si ya está instalado, no lo vuelve a descargar; si falta, lo instala (y crea su variante `-ctx16384`). Si ejecutas el script con `--no-pull` y falta, la terminal mostrará qué modelo pretende instalar y los comandos exactos que debes ejecutar.
 
-También puedes instalarlos a mano siguiendo estos pasos:
+También puedes instalarlo a mano siguiendo estos pasos:
 
 ### 3.1 Comprueba que Ollama está instalado y encendido
 
@@ -173,15 +169,14 @@ ollama list
   ```bash
   ollama serve
   ```
-  Déjalo abierto en esa terminal y abre **otra terminal** para seguir con los comandos de abajo. (En la siguiente vez, el script `opencode-local` intentará encenderlo por ti).
+  Déjalo abierto en esa terminal y abre **otra terminal** para seguir. (En la siguiente vez, `opencode-local` intentará encenderlo por ti).
 
-### 3.2 Descarga los modelos base
+### 3.2 Descarga el modelo base
 
-Ejecuta estos dos comandos (uno por uno). Pueden tardar varios minutos según tu internet:
+Ejecuta este comando (puede tardar varios minutos según tu internet):
 
 ```bash
-ollama pull qwen2.5-coder:1.5b
-ollama pull deepseek-r1:1.5b
+ollama pull qwen2.5-coder:3b
 ```
 
 **Si algo sale mal aquí:**
@@ -194,20 +189,17 @@ ollama pull deepseek-r1:1.5b
 | `model ... not found` | El nombre está mal escrito | Copia y pega el comando tal cual está escrito arriba |
 | `permission denied` | No tienes permiso en la carpeta de Ollama | Prueba con `sudo ollama pull ...` o revisa que Ollama esté bien instalado para tu usuario |
 
-### 3.3 Crea las variantes con más memoria de conversación (contexto 16384)
+### 3.3 Crea la variante con más memoria de conversación (contexto 16384)
 
-Estas variantes permiten que el modelo "recuerde" más texto en cada conversación. El script las crea solo, pero es mejor dejarlas listas:
+Esta variante permite que el modelo "recuerde" más texto en cada conversación. El script la crea solo, pero puedes dejarla lista:
 
 ```bash
-printf 'FROM qwen2.5-coder:1.5b\nPARAMETER num_ctx 16384\n' > /tmp/Modelfile.qwen
-ollama create qwen2.5-coder:1.5b-ctx16384 -f /tmp/Modelfile.qwen
-
-printf 'FROM deepseek-r1:1.5b\nPARAMETER num_ctx 16384\n' > /tmp/Modelfile.deepseek
-ollama create deepseek-r1:1.5b-ctx16384 -f /tmp/Modelfile.deepseek
+printf 'FROM qwen2.5-coder:3b\nPARAMETER num_ctx 16384\n' > /tmp/Modelfile.qwen3b
+ollama create qwen2.5-coder:3b-ctx16384 -f /tmp/Modelfile.qwen3b
 ```
 
-- Si dice que el modelo base **no existe**, primero repite el paso 3.2 para ese modelo.
-- Si dice "file not found" para el Modelfile, vuelve a ejecutar la línea `printf ...` de ese modelo y luego el `ollama create ...`.
+- Si dice que el modelo base **no existe**, primero repite el paso 3.2.
+- Si dice "file not found" para el Modelfile, vuelve a ejecutar la línea `printf ...` y luego el `ollama create ...`.
 
 ### 3.4 Comprueba que todo quedó bien
 
@@ -215,14 +207,12 @@ ollama create deepseek-r1:1.5b-ctx16384 -f /tmp/Modelfile.deepseek
 ollama list
 ```
 
-Deberías ver estas 4 líneas (los tamaños y fechas pueden variar):
+Deberías ver (los tamaños y fechas pueden variar):
 
-- `qwen2.5-coder:1.5b`
-- `qwen2.5-coder:1.5b-ctx16384`
-- `deepseek-r1:1.5b`
-- `deepseek-r1:1.5b-ctx16384`
+- `qwen2.5-coder:3b`
+- `qwen2.5-coder:3b-ctx16384`
 
-Si falta alguna, repite solo la parte que falló (3.2 para un modelo base, 3.3 para una variante `-ctx16384`).
+Si falta alguna, repite solo la parte que falló (3.2 para el modelo base, 3.3 para la variante `-ctx16384`).
 
 ### 3.5 Si el script `opencode-local` falla
 
@@ -234,9 +224,10 @@ El script necesita `bash`, `curl`, `python3` y `ollama`. Si al ejecutarlo ves er
 | `command not found: ollama` | Instala Ollama (paso 3.1) |
 | `command not found: curl` o `python3` | Instala lo que falte: `sudo apt update && sudo apt install -y curl python3` (Ubuntu/Debian) o `sudo dnf install -y curl python3` (Fedora) |
 | "No se pudo iniciar Ollama" / no responde | Abre `ollama serve` en otra terminal, revisa que no haya otro programa usando el puerto, y vuelve a ejecutar el script |
-| "Faltan modelos..." / "Faltan estos modelos..." (con `--no-pull`) | El script te mostrará los comandos exactos. Cópialos y ejecútalos (por ejemplo `ollama pull qwen2.5-coder:1.5b` y `ollama pull deepseek-r1:1.5b`, y si aplica sus variantes `-ctx16384`), o vuelve a ejecutar el script sin `--no-pull` |
+| "Falta el modelo..." / "Faltan estos modelos..." (con `--no-pull`) | El script te mostrará el comando exacto. Ejecútalo (por ejemplo `ollama pull qwen2.5-coder:3b` y, si aplica, su variante `-ctx16384`), o vuelve a ejecutar el script sin `--no-pull` |
 | "No se pudo crear la variante..." | Asegúrate de que el modelo base ya está descargado (`ollama list`) y que hay espacio en disco |
 | El script se queda cargando mucho tiempo | Es normal la primera vez (descarga/precarga). Si se corta, revisa tu internet y repite; puedes usar `--no-launch` para solo preparar sin abrir OpenCode |
+| El equipo va muy lento o se congela | El modelo puede estar usando swap por falta de RAM. Cierra otros programas, prueba `OPENCODE_LOCAL_CONTEXT=8192 opencode-local` o usa un modelo más pequeño |
 
 Para ver más detalle cuando algo falla, ejecuta:
 
@@ -256,9 +247,9 @@ mkdir -p ~/.config/opencode/agents
 # desde la raíz de este repositorio (ajusta REPO si hace falta)
 REPO="$(pwd)"
 
-ln -sf "$REPO/qwen2.5-coder-1.5b/system_prompt_qwen2.5-coder_lisp_typescript.md" ~/.config/opencode/agents/qwen-lisp.md
-ln -sf "$REPO/qwen2.5-coder-1.5b/system_prompt_qwen2.5-coder_lua_typescript.md" ~/.config/opencode/agents/qwen-lua.md
-ln -sf "$REPO/deepseek-r1-1.5b/system_prompt_deepseek-r1_python.md" ~/.config/opencode/agents/deepseek-python.md
+ln -sf "$REPO/qwen2.5-coder-3b/system_prompt_qwen2.5-coder_lisp_typescript.md" ~/.config/opencode/agents/qwen-lisp.md
+ln -sf "$REPO/qwen2.5-coder-3b/system_prompt_qwen2.5-coder_lua_typescript.md" ~/.config/opencode/agents/qwen-lua.md
+ln -sf "$REPO/qwen2.5-coder-3b/system_prompt_qwen2.5-coder_python.md" ~/.config/opencode/agents/qwen-python.md
 ```
 
 > Usar enlaces simbólicos (`ln -sf`) permite que, si actualizas los prompts en el repo, OpenCode vea los cambios tras recargar. Si prefieres copiar, usa `cp` en lugar de `ln -sf`.
@@ -269,27 +260,21 @@ Verifica que OpenCode los detecta:
 opencode debug agents
 ```
 
-Deberías ver `qwen-lisp`, `qwen-lua` y `deepseek-python` como agentes `primary`.
+Deberías ver `qwen-lisp`, `qwen-lua` y `qwen-python` como agentes `primary`.
 
 ## Paso 5. Configurar OpenCode (opcional pero recomendado)
 
-Edita `~/.config/opencode/opencode.json` para declarar el modelo por defecto, el agente por defecto y los límites de contexto de los modelos `-ctx16384`:
+Edita `~/.config/opencode/opencode.json` para declarar el modelo por defecto, el agente por defecto y los límites de contexto:
 
 ```json
 {
   "$schema": "https://opencode.ai/config.json",
-  "model": "ollama/qwen2.5-coder:1.5b-ctx16384",
+  "model": "ollama/qwen2.5-coder:3b-ctx16384",
   "default_agent": "qwen-lisp",
   "providers": {
     "ollama": {
       "models": {
-        "deepseek-r1:1.5b-ctx16384": {
-          "limit": {
-            "context": 16384,
-            "output": 4096
-          }
-        },
-        "qwen2.5-coder:1.5b-ctx16384": {
+        "qwen2.5-coder:3b-ctx16384": {
           "limit": {
             "context": 16384,
             "output": 4096
@@ -322,28 +307,28 @@ opencode reload
 2. Pulsa **Tab** para cambiar de agente y elige:
    - `qwen-lisp` → TypeScript o Common Lisp (funcional).
    - `qwen-lua` → TypeScript o Lua 5.4.
-   - `deepseek-python` → solo Python.
+   - `qwen-python` → Python 3.12 (y tareas generales de scripting).
 
 ### Por línea de comandos
 
 ```bash
-# Lisp / TypeScript con Qwen
+# Lisp / TypeScript
 opencode run --agent qwen-lisp "Common Lisp: define una función que sume una lista"
 
-# Lua / TypeScript con Qwen
+# Lua / TypeScript
 opencode run --agent qwen-lua "Lua: lee un archivo y devuelve sus líneas en una tabla"
 
-# Python con DeepSeek
-opencode run --agent deepseek-python "Python: cuenta la frecuencia de palabras de un archivo"
+# Python
+opencode run --agent qwen-python "Python: cuenta la frecuencia de palabras de un archivo"
 ```
 
 ### Consejos para sacarles el máximo provecho
 
-- **Sé concreto y acota la tarea**: son modelos 1.5B; responden mejor a peticiones cortas y específicas.
+- **Sé concreto y acota la tarea**: pide funciones o cambios pequeños y claros.
+- **Qwen + Python**: aprovecha `pathlib`, `json`, `dataclasses` y type hints; revisa casos borde.
 - **Qwen + Lisp**: pídele estilo funcional (`mapcar`, `reduce`, recursión). Si pide una macro, revisa que empiece por `(defmacro ...)` y usa `(funcall f x)` cuando la función venga en una variable.
 - **Qwen + Lua**: comprueba que los módulos terminen en `return M` y que use `~=` / `for i = 1, n do` / índices desde 1.
-- **DeepSeek + Python**: úsalo solo para Python. Si necesitas embeber Lua, usa `qwen-lua` (Lua nativo) o una alternativa como `wasmoon` desde TypeScript.
-- **Contexto**: las variantes `-ctx16384` dan más margen; evita prompts gigantes porque a 1.5B el rendimiento empeora con mucho contexto.
+- **Contexto/RAM**: si tu equipo tiene poca memoria, reduce el contexto (`OPENCODE_LOCAL_CONTEXT=8192`) o cierra otros programas.
 
 ## Subir este repositorio a tu GitHub
 
@@ -353,7 +338,7 @@ Si aún no es un repositorio git:
 cd /ruta/a/opencode-local-prompts
 git init
 git add .
-git commit -m "Prompts y script para OpenCode local (Qwen y DeepSeek)"
+git commit -m "Prompts y script para OpenCode local (Qwen 2.5 Coder 3B)"
 ```
 
 Crea un repositorio vacío en tu cuenta de GitHub y enlázalo:
@@ -376,4 +361,4 @@ gh repo create opencode-local-prompts --public --source=. --remote=origin --push
 
 - Los prompts son archivos `.md` con *frontmatter* de agente de OpenCode (V2): definen `description`, `mode: primary`, `model` y el cuerpo como system prompt.
 - `opencode-local` y los prompts son independientes: puedes usar el script sin los agentes, o los agentes sin el script, pero juntos dan la mejor experiencia local.
-- Ajusta los nombres de modelo si usas variantes distintas (por ejemplo, otros tamaños o `num_ctx`). En ese caso, edita el campo `model` en el *frontmatter* de cada prompt.
+- Ajusta los nombres de modelo si usas variantes distintas (por ejemplo, otros tamaños o `num_ctx`). En ese caso, edita el campo `model` en el *frontmatter* de cada prompt y la variable `MODEL`/`DEFAULT_MODELS` del script si corresponde.
