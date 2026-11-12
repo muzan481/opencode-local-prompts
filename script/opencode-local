@@ -2,7 +2,7 @@
 # opencode-local — prepara Ollama + modelos locales y (opcionalmente) abre OpenCode.
 set -euo pipefail
 
-DEFAULT_MODELS=("qwen2.5-coder:3b")
+DEFAULT_MODELS=("qwen2.5:1.5b" "qwen2.5-coder:1.5b")
 MODEL="${MODEL:-${DEFAULT_MODELS[0]}}"
 OLLAMA_HOST="${OLLAMA_HOST:-127.0.0.1:11434}"
 export OLLAMA_HOST
@@ -31,7 +31,8 @@ Uso: opencode-local [opciones] [directorio]
 Prepara Ollama y los modelos locales necesarios; luego abre OpenCode.
 
 Modelos predeterminados que prepara este script:
-  - qwen2.5-coder:3b     (agentes qwen-lisp, qwen-lua y qwen-python)
+  - qwen2.5:1.5b         (agente qwen-plan, planificador)
+  - qwen2.5-coder:1.5b   (agentes qwen-lisp, qwen-lua y qwen-python, implementador)
 
 Opciones:
   --no-launch   Solo prepara el entorno, no abre OpenCode.

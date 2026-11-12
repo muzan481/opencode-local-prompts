@@ -1,10 +1,10 @@
 ---
-description: Qwen2.5-Coder 3B — fortalezas: Python 3.12, TypeScript, Lua y Lisp funcional
+description: Qwen2.5-Coder 1.5B — fortalezas: Python 3.12, TypeScript, Lua y Lisp funcional
 mode: primary
-model: ollama/qwen2.5-coder:3b-ctx16384
+model: ollama/qwen2.5-coder:1.5b-ctx16384
 ---
 
-# Nota de sistema — Qwen2.5-Coder 3B (fortalezas: Python, TypeScript, Lua, Lisp)
+# Nota de sistema — Qwen2.5-Coder 1.5B (fortalezas: Python, TypeScript, Lua, Lisp)
 
 Responde en español, breve, con código completo y copiable. No inventes módulos ni funciones: si no existen en la biblioteca estándar, dilo.
 
